@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -215,6 +218,12 @@ type Controller struct {
 
 	// go-ovn southbound client interface
 	ovnSBClient goovn.Client
+
+	// nb db member ids
+	ovnNBDBIds []string
+
+	// sb db member ids
+	ovnSBDBIds []string
 }
 
 const (
@@ -287,6 +296,8 @@ func NewOvnController(kubeClient kubernetes.Interface, egressIPClient egressipap
 		recorder:                      recorder,
 		ovnNBClient:                   ovnNBClient,
 		ovnSBClient:                   ovnSBClient,
+		ovnNBDBIds:                    make([]string, 0),
+		ovnSBDBIds:                    make([]string, 0),
 	}
 }
 
@@ -451,12 +462,18 @@ func extractEmptyLBBackendsEvents(out []byte) ([]emptyLBBackendEvent, error) {
 // for syncNodesPeriodic which deletes chassis records from the sbdb
 // every 5 minutes
 func (oc *Controller) syncPeriodic() {
+	oc.initializeDBMemberCache("OVN_Northbound")
+	oc.initializeDBMemberCache("OVN_Southbound")
 	go func() {
 		nodeSyncTicker := time.NewTicker(5 * time.Minute)
+		dbHealthTicker := time.NewTicker(1 * time.Minute)
 		for {
 			select {
 			case <-nodeSyncTicker.C:
 				oc.syncNodesPeriodic()
+			case <-dbHealthTicker.C:
+				oc.checkDBMembers("OVN_Northbound")
+				oc.checkDBMembers("OVN_Southbound")
 			case <-oc.stopChan:
 				return
 			}
@@ -1178,4 +1195,113 @@ func shouldUpdate(node, oldNode *kapi.Node) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// checkDBMembers checks if the db-ids of the db instances have changed.
+// In case all the db-ids have departed from the original list, we treat
+// this as a need for the master to re-sync all the dbs. This is particularly
+// relevant for when the dbs get corrupted for some unknown reason.
+// This kill-switch lets us recover and resync the dbs to known state.
+func (oc *Controller) checkDBMembers(dbName string) {
+	var appCtl func(args ...string) (string, string, error)
+	var dbIds []string
+	var numDBIdsChanged int
+	if dbName == "OVN_Northbound" {
+		appCtl = util.RunOVNNBAppCtl
+		dbIds = oc.ovnNBDBIds
+	} else {
+		appCtl = util.RunOVNSBAppCtl
+		dbIds = oc.ovnSBDBIds
+	}
+
+	out, stderr, err := appCtl("cluster/status", dbName)
+	if err != nil {
+		klog.Warningf("Unable to get cluster status for: %s, stderr: %v, err: %v", dbName, stderr, err)
+		return
+	}
+	r, _ := regexp.Compile(`([a-z0-9]{4}) at ((ssl|tcp):\[?[a-z0-9.:]+\]?)`)
+	members := r.FindAllStringSubmatch(out, -1)
+	// Currently the dbIds slice is never "updated".
+	// We might need to be able to differentiate between the case where all ids are changing together
+	// as a result of db corruption on nodes, vs. a single db changing at a time.
+	// A single db changing is not worthy of a complete sync by restarting master. However, because we don't
+	// update the db-ids list if each of the three instances change one at a time (over a period of time),
+	// when the last instance's id changes, we will still restart the current leader to force a sync.
+	for _, knownMember := range dbIds {
+		for _, member := range members {
+			if len(member) < 3 {
+				klog.Warningf("Unable to find parse member: %s", member)
+				continue
+			}
+
+			if knownMember == member[1] {
+				return
+			}
+		}
+		numDBIdsChanged = numDBIdsChanged + 1
+	}
+	if len(dbIds) > 0 && numDBIdsChanged == len(dbIds) {
+		klog.Infof("Original list of DB IDs: %s"+
+			"Current list of members: %v", dbIds, members)
+		klog.Infof("Resetting the ovn-northd cluster state")
+		_, stderr, err := util.RunOVNNorthAppCtl("nb-cluster-state-reset")
+		if err != nil {
+			klog.Warningf("Unable to reset the cluster state for ovn-northd: stderr: %v, err: %v", stderr, err)
+		}
+		klog.Fatalf("All the original DB IDs have changed..." +
+			"exit and resync the dbs")
+		os.Exit(1)
+	}
+}
+
+// initializeDBMemberCache creates the initial slice of db-ids from
+// the db instances.
+func (oc *Controller) initializeDBMemberCache(dbName string) {
+	var appCtl func(args ...string) (string, string, error)
+	var dbIds *[]string
+	var knownMembers, knownServers []string
+	if dbName == "OVN_Northbound" {
+		appCtl = util.RunOVNNBAppCtl
+		knownMembers = strings.Split(config.OvnNorth.Address, ",")
+		dbIds = &oc.ovnNBDBIds
+	} else {
+		appCtl = util.RunOVNSBAppCtl
+		knownMembers = strings.Split(config.OvnSouth.Address, ",")
+		dbIds = &oc.ovnSBDBIds
+	}
+	klog.Infof("Known members: %v", knownMembers)
+	for _, knownMember := range knownMembers {
+		server := strings.Split(knownMember, ":")
+		if len(server) < 3 {
+			klog.Warningf("Failed to parse known member: %s", knownMember)
+			continue
+		}
+		knownServers = append(knownServers, server[1])
+	}
+	out, stderr, err := appCtl("cluster/status", dbName)
+	if err != nil {
+		klog.Warningf("Unable to get cluster status for: %s, stderr: %v, err: %v", dbName, stderr, err)
+		return
+	}
+	r, _ := regexp.Compile(`([a-z0-9]{4}) at ((ssl|tcp):\[?[a-z0-9.:]+\]?)`)
+	members := r.FindAllStringSubmatch(out, -1)
+	for _, member := range members {
+		if len(member) < 3 {
+			klog.Warningf("Unable to find parse member: %s", member)
+			return
+		}
+		matchedServer := strings.Split(member[2], ":")
+		if len(matchedServer) < 3 {
+			klog.Warningf("Unable to parse address portion of the member entry: %s", matchedServer)
+			return
+		}
+		for _, knownServer := range knownServers {
+			if knownServer == matchedServer[1] {
+				*dbIds = append(*dbIds, member[1])
+			}
+		}
+	}
+	if len(*dbIds) > 0 {
+		klog.Infof("Initial list of DB Ids for %s is %v", dbName, *dbIds)
+	}
 }

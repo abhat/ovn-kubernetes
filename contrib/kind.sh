@@ -347,6 +347,7 @@ pushd ../dist/images
   --kind \
   --ovn-unprivileged-mode=no \
   --master-loglevel=5 \
+  --dbchecker-loglevel=5\
   --egress-ip-enable=true
 popd
 
