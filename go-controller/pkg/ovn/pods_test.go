@@ -16,6 +16,7 @@ import (
 	ovntest "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 
+	kapi "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -398,7 +399,12 @@ var _ = Describe("OVN Pod Operations", func() {
 				fakeOvn.controller.WatchPods()
 				Expect(fExec.CalledMatchesExpected()).To(BeTrue(), fExec.ErrorDesc)
 				// allow pod retry from update annotation to fail
-				time.Sleep(2 * time.Second)
+				select {
+				case event := <-fakeOvn.fakeRecorder.Events:
+					Expect(strings.Contains(event, kapi.EventTypeWarning+" ErrorAddingLogicalPort")).Should(BeTrue(), event)
+				case <-time.After(2 * time.Second):
+					Expect(true).NotTo(HaveOccurred(), fmt.Sprintf("Couldn't get pod %s in namespace %s reconciled within 2s", t.podName, t.namespace))
+				}
 				mockDelNBDBError(ovntest.LogicalSwitchPortType, t.portName,
 					ovntest.LogicalSwitchPortExternalId,
 					fakeOvn.ovnNBClient)
