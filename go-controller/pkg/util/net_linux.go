@@ -17,6 +17,7 @@ import (
 )
 
 type NetLinkOps interface {
+	LinkAdd(link netlink.Link) error
 	LinkByName(ifaceName string) (netlink.Link, error)
 	LinkSetDown(link netlink.Link) error
 	LinkSetName(link netlink.Link, newName string) error
@@ -50,6 +51,10 @@ func SetNetLinkOpMockInst(mockInst NetLinkOps) {
 // GetNetLinkOps will be invoked by functions in other packages that would need access to the netlink library methods.
 func GetNetLinkOps() NetLinkOps {
 	return netLinkOps
+}
+
+func (defaultNetLinkOps) LinkAdd(link netlink.Link) error {
+	return netlink.LinkAdd(link)
 }
 
 func (defaultNetLinkOps) LinkByName(ifaceName string) (netlink.Link, error) {

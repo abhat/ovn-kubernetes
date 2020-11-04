@@ -97,8 +97,8 @@ func (mock *MockOVNClient) Close() error {
 }
 
 func (mock *MockOVNClient) ExecuteMockCommand(e *MockExecution) error {
-	// mock.mutex.Lock()
-	// defer mock.mutex.Unlock()
+	mock.mutex.Lock()
+	defer mock.mutex.Unlock()
 	var (
 		cache MockObjectCacheByName
 		ok    bool
@@ -181,8 +181,6 @@ func (mock *MockOVNClient) AddToErrorCache(table, name, fieldType string, err er
 
 // get fake error from cache
 func (mock *MockOVNClient) retFromErrorCache(table, name, fieldType string) error {
-	mock.mutex.Lock()
-	defer mock.mutex.Unlock()
 	key := fmt.Sprintf("%s:%s:%s", table, name, fieldType)
 	if val, ok := mock.errorCache[key]; ok {
 		return val

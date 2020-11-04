@@ -140,12 +140,12 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 
 		_, err = createManagementPort(nodeName, nodeSubnetCIDRs, nodeAnnotator, waiter)
 		Expect(err).NotTo(HaveOccurred())
-		l, err := netlink.LinkByName(mgtPort)
+		l, err := util.GetNetLinkOps().LinkByName(mgtPort)
 		Expect(err).NotTo(HaveOccurred())
 
 		for i, cfg := range configs {
 			// Check whether IP has been added
-			addrs, err := netlink.AddrList(l, cfg.family)
+			addrs, err := util.GetNetLinkOps().AddrList(l, cfg.family)
 			Expect(err).NotTo(HaveOccurred())
 			var foundAddr bool
 			for _, a := range addrs {
@@ -165,7 +165,7 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 				dstIPnet := ovntest.MustParseIPNet(subnet)
 				route := &netlink.Route{Dst: dstIPnet}
 				filterMask := netlink.RT_FILTER_DST
-				routes, err := netlink.RouteListFiltered(cfg.family, route, filterMask)
+				routes, err := util.GetNetLinkOps().RouteListFiltered(cfg.family, route, filterMask)
 				Expect(err).NotTo(HaveOccurred())
 				for _, r := range routes {
 					if r.Gw.Equal(gatewayIP) && r.LinkIndex == l.Attrs().Index {
@@ -180,7 +180,7 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 			Expect(j).To(Equal(2))
 
 			// Check whether router IP has been added in the arp entry for mgmt port
-			neighbours, err := netlink.NeighList(l.Attrs().Index, cfg.family)
+			neighbours, err := util.GetNetLinkOps().NeighList(l.Attrs().Index, cfg.family)
 			Expect(err).NotTo(HaveOccurred())
 			var foundNeighbour bool
 			for _, neighbour := range neighbours {

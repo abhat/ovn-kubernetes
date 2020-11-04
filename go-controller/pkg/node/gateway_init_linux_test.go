@@ -109,14 +109,14 @@ func shareGatewayInterfaceTest(app *cli.App, testNS ns.NetNS,
 					defer GinkgoRecover()
 
 					// Create breth0 as a dummy link
-					err := netlink.LinkAdd(&netlink.Dummy{
+					err := util.GetNetLinkOps().LinkAdd(&netlink.Dummy{
 						LinkAttrs: netlink.LinkAttrs{
 							Name:         "br" + eth0Name,
 							HardwareAddr: ovntest.MustParseMAC(eth0MAC),
 						},
 					})
 					Expect(err).NotTo(HaveOccurred())
-					_, err = netlink.LinkByName("br" + eth0Name)
+					_, err = util.GetNetLinkOps().LinkByName("br" + eth0Name)
 					Expect(err).NotTo(HaveOccurred())
 					return nil
 				})
@@ -238,9 +238,9 @@ cookie=0x0, duration=8366.597s, table=1, n_packets=10641, n_bytes=10370087, prio
 			Expect(err).NotTo(HaveOccurred())
 			startGateway(sharedGw, wf)
 			// check if IP addresses have been assigned to localnetGatewayNextHopPort interface
-			link, err := netlink.LinkByName(localnetGatewayNextHopPort)
+			link, err := util.GetNetLinkOps().LinkByName(localnetGatewayNextHopPort)
 			Expect(err).NotTo(HaveOccurred())
-			addresses, err := netlink.AddrList(link, syscall.AF_INET)
+			addresses, err := util.GetNetLinkOps().AddrList(link, syscall.AF_INET)
 			Expect(err).NotTo(HaveOccurred())
 			var foundAddr bool
 			expectedAddress, err := netlink.ParseAddr(brNextHopCIDR)
@@ -260,9 +260,9 @@ cookie=0x0, duration=8366.597s, table=1, n_packets=10641, n_bytes=10370087, prio
 
 			// Verify the code moved eth0's IP address, MAC, and routes
 			// over to breth0
-			l, err := netlink.LinkByName("breth0")
+			l, err := util.GetNetLinkOps().LinkByName("breth0")
 			Expect(err).NotTo(HaveOccurred())
-			addrs, err := netlink.AddrList(l, syscall.AF_INET)
+			addrs, err := util.GetNetLinkOps().AddrList(l, syscall.AF_INET)
 			Expect(err).NotTo(HaveOccurred())
 			var found bool
 			expectedAddr, err := netlink.ParseAddr(eth0CIDR)
@@ -420,9 +420,9 @@ func localNetInterfaceTest(app *cli.App, testNS ns.NetNS,
 			startGateway(gw, fakeOvnNode.watcher)
 
 			// Check if IP has been assigned to LocalnetGatewayNextHopPort
-			link, err := netlink.LinkByName(localnetGatewayNextHopPort)
+			link, err := util.GetNetLinkOps().LinkByName(localnetGatewayNextHopPort)
 			Expect(err).NotTo(HaveOccurred())
-			addrs, err := netlink.AddrList(link, syscall.AF_UNSPEC)
+			addrs, err := util.GetNetLinkOps().AddrList(link, syscall.AF_UNSPEC)
 			Expect(err).NotTo(HaveOccurred())
 
 			var foundAddr bool
@@ -608,21 +608,21 @@ var _ = Describe("Gateway Init Operations", func() {
 
 				ovntest.AddLink(eth0Name)
 
-				l, err := netlink.LinkByName(eth0Name)
+				l, err := util.GetNetLinkOps().LinkByName(eth0Name)
 				Expect(err).NotTo(HaveOccurred())
-				err = netlink.LinkSetUp(l)
+				err = util.GetNetLinkOps().LinkSetUp(l)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Add an IP address
 				addr, err := netlink.ParseAddr(eth0CIDR)
 				Expect(err).NotTo(HaveOccurred())
-				err = netlink.AddrAdd(l, addr)
+				err = util.GetNetLinkOps().AddrAdd(l, addr)
 				Expect(err).NotTo(HaveOccurred())
 
 				eth0MAC = l.Attrs().HardwareAddr.String()
 
 				// And a default route
-				err = netlink.RouteAdd(&netlink.Route{
+				err = util.GetNetLinkOps().RouteAdd(&netlink.Route{
 					LinkIndex: l.Attrs().Index,
 					Scope:     netlink.SCOPE_UNIVERSE,
 					Dst:       ovntest.MustParseIPNet("0.0.0.0/0"),

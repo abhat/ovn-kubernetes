@@ -62,7 +62,7 @@ function testrun {
 }
 
 # These packages requires root for network namespace maniuplation in unit tests
-root_pkgs=("github.com/ovn-org/ovn-kubernetes/go-controller/pkg/node" "github.com/ovn-org/ovn-kubernetes/go-controller/hybrid-overlay/pkg/controller")
+root_pkgs=("github.com/ovn-org/ovn-kubernetes/go-controller/hybrid-overlay/pkg/controller")
 
 i=0
 for pkg in ${PKGS}; do
