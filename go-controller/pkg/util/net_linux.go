@@ -18,6 +18,7 @@ import (
 
 type NetLinkOps interface {
 	LinkAdd(link netlink.Link) error
+	LinkDel(link netlink.Link) error
 	LinkByName(ifaceName string) (netlink.Link, error)
 	LinkSetDown(link netlink.Link) error
 	LinkSetName(link netlink.Link, newName string) error
@@ -55,6 +56,10 @@ func GetNetLinkOps() NetLinkOps {
 
 func (defaultNetLinkOps) LinkAdd(link netlink.Link) error {
 	return netlink.LinkAdd(link)
+}
+
+func (defaultNetLinkOps) LinkDel(link netlink.Link) error {
+	return netlink.LinkDel(link)
 }
 
 func (defaultNetLinkOps) LinkByName(ifaceName string) (netlink.Link, error) {
