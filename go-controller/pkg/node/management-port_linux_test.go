@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/containernetworking/plugins/pkg/testutils"
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/stretchr/testify/mock"
 	"github.com/urfave/cli/v2"
 	"github.com/vishvananda/netlink"
 
@@ -22,6 +22,7 @@ import (
 	egressipv1fake "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressip/v1/apis/clientset/versioned/fake"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	ovntest "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing"
+	cni_ns_mocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing/mocks/github.com/containernetworking/plugins/pkg/ns"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	egressfirewallfake "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1/apis/clientset/versioned/fake"
+	utilmocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util/mocks"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -237,7 +239,7 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 var _ = Describe("Management Port Operations", func() {
 	var tmpErr error
 	var app *cli.App
-	var testNS ns.NetNS
+	var testNS *cni_ns_mocks.NetNS
 	var fexec *ovntest.FakeExec
 
 	tmpDir, tmpErr = ioutil.TempDir("", "clusternodetest_certdir")
@@ -254,9 +256,16 @@ var _ = Describe("Management Port Operations", func() {
 		app.Name = "test"
 		app.Flags = config.Flags
 
+		// Set up a mock netlink interface
+		mockNetLinkOps := new(utilmocks.NetLinkOps)
+		util.SetNetLinkOpMockInst(mockNetLinkOps)
+
 		// Set up a fake k8sMgmt interface
-		testNS, err = testutils.NewNS()
-		Expect(err).NotTo(HaveOccurred())
+		testNS = new(cni_ns_mocks.NetNS)
+		nsCall := testNS.On("Do")
+		nsCall.Arguments = append(nsCall.Arguments, mock.AnythingOfType("func(ns.NetNS) error"))
+		nsCall.ReturnArguments = append(nsCall.ReturnArguments, nil)
+		nsCall.Maybe()
 		err = testNS.Do(func(ns.NetNS) error {
 			defer GinkgoRecover()
 			ovntest.AddLink(types.K8sMgmtIntfName)

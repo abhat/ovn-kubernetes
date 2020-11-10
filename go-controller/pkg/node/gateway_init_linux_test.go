@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/urfave/cli/v2"
 	kapi "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -24,11 +25,12 @@ import (
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/containernetworking/plugins/pkg/testutils"
 	"github.com/vishvananda/netlink"
 
 	egressfirewallfake "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1/apis/clientset/versioned/fake"
 	egressipfake "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressip/v1/apis/clientset/versioned/fake"
+	cni_ns_mocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing/mocks/github.com/containernetworking/plugins/pkg/ns"
+	utilmocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util/mocks"
 	apiextensionsfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 
 	. "github.com/onsi/ginkgo"
@@ -496,15 +498,17 @@ func expectedIPTablesRules(gatewayIP string) map[string]util.FakeTable {
 var _ = Describe("Gateway Init Operations", func() {
 
 	var (
-		testNS ns.NetNS
+		testNS *cni_ns_mocks.NetNS
 		app    *cli.App
 	)
 
 	BeforeEach(func() {
 		var err error
-		testNS, err = testutils.NewNS()
-		Expect(err).NotTo(HaveOccurred())
-
+		testNS = new(cni_ns_mocks.NetNS)
+		nsCall := testNS.On("Do")
+		nsCall.Arguments = append(nsCall.Arguments, mock.AnythingOfType("func(ns.NetNS) error"))
+		nsCall.ReturnArguments = append(nsCall.ReturnArguments, nil)
+		nsCall.Maybe()
 		// Restore global default values before each testcase
 		config.PrepareTestConfig()
 
@@ -513,8 +517,6 @@ var _ = Describe("Gateway Init Operations", func() {
 		app.Flags = config.Flags
 
 		// Set up a fake br-local & LocalnetGatewayNextHopPort
-		testNS, err = testutils.NewNS()
-		Expect(err).NotTo(HaveOccurred())
 		err = testNS.Do(func(ns.NetNS) error {
 			defer GinkgoRecover()
 
@@ -602,6 +604,9 @@ var _ = Describe("Gateway Init Operations", func() {
 		var eth0MAC string
 
 		BeforeEach(func() {
+			// Set up mock netlink ops
+			mockNetLinkOps := new(utilmocks.NetLinkOps)
+			util.SetNetLinkOpMockInst(mockNetLinkOps)
 			// Set up a fake eth0
 			err := testNS.Do(func(ns.NetNS) error {
 				defer GinkgoRecover()
