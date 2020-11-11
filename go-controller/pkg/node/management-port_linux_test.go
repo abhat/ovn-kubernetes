@@ -12,9 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/coreos/go-iptables/iptables"
-	"github.com/stretchr/testify/mock"
 	"github.com/urfave/cli/v2"
 	"github.com/vishvananda/netlink"
 
@@ -22,7 +20,6 @@ import (
 	egressipv1fake "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressip/v1/apis/clientset/versioned/fake"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	ovntest "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing"
-	cni_ns_mocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing/mocks/github.com/containernetworking/plugins/pkg/ns"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 	v1 "k8s.io/api/core/v1"
@@ -63,7 +60,7 @@ type managementPortTestConfig struct {
 	expectedGatewayIP        string
 }
 
-func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.NetNS,
+func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec,
 	configs []managementPortTestConfig, expectedLRPMAC string) {
 	const (
 		nodeName      string = "node1"
@@ -137,9 +134,8 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 	nodeAnnotator := kube.NewNodeAnnotator(&kube.Kube{fakeClient, egressipv1fake.NewSimpleClientset(), &egressfirewallfake.Clientset{}}, &existingNode)
 	waiter := newStartupWaiter()
 
-	err = testNS.Do(func(ns.NetNS) error {
+	err = func() error {
 		defer GinkgoRecover()
-
 		_, err = createManagementPort(nodeName, nodeSubnetCIDRs, nodeAnnotator, waiter)
 		Expect(err).NotTo(HaveOccurred())
 		l, err := util.GetNetLinkOps().LinkByName(mgtPort)
@@ -195,7 +191,7 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 		}
 
 		return nil
-	})
+	}()
 	Expect(err).NotTo(HaveOccurred())
 
 	err = nodeAnnotator.Run()
@@ -239,7 +235,6 @@ func testManagementPort(ctx *cli.Context, fexec *ovntest.FakeExec, testNS ns.Net
 var _ = Describe("Management Port Operations", func() {
 	var tmpErr error
 	var app *cli.App
-	var testNS *cni_ns_mocks.NetNS
 	var fexec *ovntest.FakeExec
 
 	tmpDir, tmpErr = ioutil.TempDir("", "clusternodetest_certdir")
@@ -261,23 +256,17 @@ var _ = Describe("Management Port Operations", func() {
 		util.SetNetLinkOpMockInst(mockNetLinkOps)
 
 		// Set up a fake k8sMgmt interface
-		testNS = new(cni_ns_mocks.NetNS)
-		nsCall := testNS.On("Do")
-		nsCall.Arguments = append(nsCall.Arguments, mock.AnythingOfType("func(ns.NetNS) error"))
-		nsCall.ReturnArguments = append(nsCall.ReturnArguments, nil)
-		nsCall.Maybe()
-		err = testNS.Do(func(ns.NetNS) error {
+		err = func() error {
 			defer GinkgoRecover()
 			ovntest.AddLink(types.K8sMgmtIntfName)
 			return nil
-		})
+		}()
 		Expect(err).NotTo(HaveOccurred())
 
 		fexec = ovntest.NewFakeExec()
 	})
 
 	AfterEach(func() {
-		Expect(testNS.Close()).To(Succeed())
 	})
 
 	const (
@@ -297,9 +286,9 @@ var _ = Describe("Management Port Operations", func() {
 		v6lrpMAC string = "0a:58:23:5a:40:f1"
 	)
 
-	It("sets up the management port for IPv4 clusters", func() {
+	It("abhat: sets up the management port for IPv4 clusters", func() {
 		app.Action = func(ctx *cli.Context) error {
-			testManagementPort(ctx, fexec, testNS,
+			testManagementPort(ctx, fexec,
 				[]managementPortTestConfig{
 					{
 						family:   netlink.FAMILY_V4,
@@ -325,7 +314,7 @@ var _ = Describe("Management Port Operations", func() {
 
 	It("sets up the management port for IPv6 clusters", func() {
 		app.Action = func(ctx *cli.Context) error {
-			testManagementPort(ctx, fexec, testNS,
+			testManagementPort(ctx, fexec,
 				[]managementPortTestConfig{
 					{
 						family:   netlink.FAMILY_V6,
@@ -351,7 +340,7 @@ var _ = Describe("Management Port Operations", func() {
 
 	It("sets up the management port for dual-stack clusters", func() {
 		app.Action = func(ctx *cli.Context) error {
-			testManagementPort(ctx, fexec, testNS,
+			testManagementPort(ctx, fexec,
 				[]managementPortTestConfig{
 					{
 						family:   netlink.FAMILY_V4,
