@@ -1792,6 +1792,14 @@ var _ = ginkgo.Describe("OVN master EgressIP Operations cluster default network"
 						Name:  node2.Name,
 						Ports: []string{"k8s-" + node2.Name + "-UUID"},
 					}
+					dynamicNeighRouters := "true"
+					if config.OVNKubernetesFeature.EnableInterconnect {
+						dynamicNeighRouters = "false"
+					}
+
+					logicalRouterOptions := map[string]string{
+						"dynamic_neigh_routers": dynamicNeighRouters,
+					}
 
 					fakeOvn.startWithDBSetup(
 						libovsdbtest.TestSetup{
@@ -1811,15 +1819,17 @@ var _ = ginkgo.Describe("OVN master EgressIP Operations cluster default network"
 									UUID: types.OVNClusterRouter + "-UUID",
 								},
 								&nbdb.LogicalRouter{
-									Name:  types.GWRouterPrefix + node1.Name,
-									UUID:  types.GWRouterPrefix + node1.Name + "-UUID",
-									Ports: []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node1.Name + "-UUID"},
+									Name:    types.GWRouterPrefix + node1.Name,
+									UUID:    types.GWRouterPrefix + node1.Name + "-UUID",
+									Ports:   []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node1.Name + "-UUID"},
+									Options: logicalRouterOptions,
 								},
 								&nbdb.LogicalRouter{
-									Name:  types.GWRouterPrefix + node2.Name,
-									UUID:  types.GWRouterPrefix + node2.Name + "-UUID",
-									Ports: []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node2.Name + "-UUID"},
-									Nat:   nil,
+									Name:    types.GWRouterPrefix + node2.Name,
+									UUID:    types.GWRouterPrefix + node2.Name + "-UUID",
+									Ports:   []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node2.Name + "-UUID"},
+									Nat:     nil,
+									Options: logicalRouterOptions,
 								},
 								&nbdb.LogicalSwitchPort{
 									UUID: types.EXTSwitchToGWRouterPrefix + types.GWRouterPrefix + node1Name + "-UUID",
@@ -1956,14 +1966,16 @@ var _ = ginkgo.Describe("OVN master EgressIP Operations cluster default network"
 							ExternalIDs: getEgressIPLRPNoReRoutePodToNodeDbIDs(IPFamilyValueV4, types.DefaultNetworkName, fakeOvn.controller.eIPC.controllerName).GetExternalIDs(),
 						},
 						&nbdb.LogicalRouter{
-							Name:  types.GWRouterPrefix + node1.Name,
-							UUID:  types.GWRouterPrefix + node1.Name + "-UUID",
-							Ports: []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node1.Name + "-UUID"},
+							Name:    types.GWRouterPrefix + node1.Name,
+							UUID:    types.GWRouterPrefix + node1.Name + "-UUID",
+							Ports:   []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node1.Name + "-UUID"},
+							Options: logicalRouterOptions,
 						},
 						&nbdb.LogicalRouter{
-							Name:  types.GWRouterPrefix + node2.Name,
-							UUID:  types.GWRouterPrefix + node2.Name + "-UUID",
-							Ports: []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node2.Name + "-UUID"},
+							Name:    types.GWRouterPrefix + node2.Name,
+							UUID:    types.GWRouterPrefix + node2.Name + "-UUID",
+							Ports:   []string{types.GWRouterToJoinSwitchPrefix + types.GWRouterPrefix + node2.Name + "-UUID"},
+							Options: logicalRouterOptions,
 						},
 						&nbdb.LogicalRouter{
 							Name:     types.OVNClusterRouter,
